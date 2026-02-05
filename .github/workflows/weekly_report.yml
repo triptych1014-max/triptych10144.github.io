@@ -1,1 +1,33 @@
+name: Weekly Jira Report
 
+on:
+  schedule:
+    # 매주 월요일 한국 시간 오전 9시 (UTC 00:00)
+    - cron: '0 0 * * 1'
+  workflow_dispatch: # GitHub 웹사이트에서 수동으로 버튼 눌러 실행 가능하게 함
+
+jobs:
+  run-report:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 저장소 코드 가져오기
+        uses: actions/checkout@v3
+        
+      - name: 파이썬 설정 (3.9 버전)
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          
+      - name: 라이브러리 설치
+        run: |
+          pip install -r requirements.txt
+          
+      - name: 스크립트 실행
+        env: # GitHub Secrets에 저장한 값을 환경 변수로 주입
+          JIRA_SERVER: ${{ secrets.JIRA_SERVER }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python main.py
