@@ -12,8 +12,7 @@ JIRA_TOKEN = os.environ.get("JIRA_TOKEN")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 KAKAOWORK_WEBHOOK_URL = os.environ.get("KAKAOWORK_WEBHOOK_URL")
 
-# ✅ 수정됨: 분석하고 싶은 키워드 3가지를 리스트로 설정
-# 필요한 키워드로 아래 내용을 변경하세요.
+# ✅ 검색할 키워드 3가지 설정
 TARGET_KEYWORDS = ["604", "624", "704"] 
 
 def get_jira_issues_by_keyword():
@@ -31,7 +30,9 @@ def get_jira_issues_by_keyword():
             
             # JQL: 키워드 포함 + 최근 7일 생성 + 생성일 역순
             jql_query = f'text ~ "{keyword}" AND created >= "-7d" ORDER BY created DESC'
-            issues = jira.search_issues(jql_query, max_results=15) # 키워드가 여러개니 개수 제한을 조금 줄임
+            
+            # 🔴 [수정됨] max_results -> maxResults 로 변경
+            issues = jira.search_issues(jql_query, maxResults=15)
             
             if not issues:
                 combined_data += f"\n=== [{keyword}] 관련 이슈 없음 ===\n"
@@ -61,7 +62,6 @@ def summarize_with_gpt(text_data):
 
     client = OpenAI(api_key=OPENAI_API_KEY)
     
-    # ✅ 수정됨: 3가지 키워드를 구분해서 요약하라는 프롬프트
     prompt = f"""
     아래는 최근 일주일간 진행된 Jira 이슈 리스트입니다.
     데이터는 [{', '.join(TARGET_KEYWORDS)}] 키워드별로 구분되어 있습니다.
@@ -104,7 +104,6 @@ def send_kakaowork_alert(message):
     if not message:
         return
 
-    # 제목에 키워드들을 나열
     title_text = ", ".join(TARGET_KEYWORDS)
 
     payload = {
@@ -153,10 +152,10 @@ def send_kakaowork_alert(message):
 if __name__ == "__main__":
     print("🚀 자동화 스크립트 시작")
     
-    # 1. Jira 데이터 수집 (3개 키워드 통합)
+    # 1. Jira 데이터 수집
     raw_data = get_jira_issues_by_keyword()
     
-    # 2. 데이터가 있을 경우에만 요약 및 전송
+    # 2. 데이터가 있든 없든 처리
     if raw_data:
         print("📝 데이터 수집 완료, AI 요약 시작...")
         summary = summarize_with_gpt(raw_data)
@@ -165,4 +164,5 @@ if __name__ == "__main__":
             print("📩 카카오워크 전송 중...")
             send_kakaowork_alert(summary)
     else:
-        print("❌ 처리할 데이터가 없거나 오류가 발생하여 종료합니다.")
+        # 데이터가 없을 때도 로그 남김
+        print("⚠️ 검색된 이슈가 없습니다. (카카오워크 발송 안 함)")
