@@ -29,7 +29,7 @@ def get_jira_issues_by_keyword():
             print(f"🔍 '{keyword}' 검색 중...")
             
             # JQL: 키워드 포함 + 최근 7일 생성 + 생성일 역순
-            jql_query = f'text ~ "{keyword}" AND created >= "-7d" ORDER BY created DESC'
+            jql_query = f'text ~ "*{keyword}*" AND created >= "-7d" ORDER BY created DESC'
             
             # 🔴 [수정됨] max_results -> maxResults 로 변경
             issues = jira.search_issues(jql_query, maxResults=15)
@@ -166,3 +166,4 @@ if __name__ == "__main__":
     else:
         # 데이터가 없을 때도 로그 남김
         print("⚠️ 검색된 이슈가 없습니다. (카카오워크 발송 안 함)")
+
