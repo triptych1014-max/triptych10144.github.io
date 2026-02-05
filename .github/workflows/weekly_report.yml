@@ -14,10 +14,10 @@ jobs:
       - name: 저장소 코드 가져오기
         uses: actions/checkout@v3
         
-      - name: 파이썬 설정 (3.9 버전)
+      - name: 파이썬 설정 (3.11 버전)
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          python-version: '3.11'
           
       - name: 라이브러리 설치
         run: |
