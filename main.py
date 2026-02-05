@@ -1,41 +1,37 @@
 import os
 import sys
 from jira import JIRA
-from openai import OpenAI
+import google.generativeai as genai
 import requests
 from datetime import datetime
 
-# === 환경 변수 로드 ===
+# === 1. 환경 변수 로드 ===
 JIRA_SERVER = os.environ.get("JIRA_SERVER")
 JIRA_EMAIL = os.environ.get("JIRA_EMAIL")
 JIRA_TOKEN = os.environ.get("JIRA_TOKEN")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") # 이름 변경됨
 KAKAOWORK_WEBHOOK_URL = os.environ.get("KAKAOWORK_WEBHOOK_URL")
 
-# ✅ 검색할 키워드 3가지 설정
-TARGET_KEYWORDS = ["604", "624", "704"] 
+# === 2. 검색할 키워드 설정 ===
+TARGET_KEYWORDS = ["결제", "보안", "704"] 
 
 def get_jira_issues_by_keyword():
-    """설정된 키워드 리스트를 순회하며 이슈를 수집합니다."""
-    
+    """Jira 이슈 수집 함수 (기존과 동일)"""
     combined_data = ""
     found_any_issue = False
 
     try:
         jira = JIRA(server=JIRA_SERVER, basic_auth=(JIRA_EMAIL, JIRA_TOKEN))
         
-        # 각 키워드별로 반복 실행
         for keyword in TARGET_KEYWORDS:
-            print(f"🔍 '{keyword}' 검색 중...")
+            print(f"🔍 '{keyword}' 관련 이슈 검색 중...")
             
-            # JQL: 키워드 포함 + 최근 7일 생성 + 생성일 역순
+            # 검색 조건: 제목/내용 포함 OR 최근 30일 내 업데이트
             jql_query = f'(summary ~ "{keyword}" OR text ~ "{keyword}") AND updated >= "-30d" ORDER BY updated DESC'
-            
-            # 🔴 [수정됨] max_results -> maxResults 로 변경
-            issues = jira.search_issues(jql_query, maxResults=15)
+            issues = jira.search_issues(jql_query, maxResults=10)
             
             if not issues:
-                combined_data += f"\n=== [{keyword}] 관련 이슈 없음 ===\n"
+                combined_data += f"\n=== [{keyword}] 관련 최근 이슈 없음 ===\n"
                 continue
                 
             found_any_issue = True
@@ -45,67 +41,54 @@ def get_jira_issues_by_keyword():
                 summary = issue.fields.summary
                 status = issue.fields.status.name
                 assignee = issue.fields.assignee.displayName if issue.fields.assignee else "담당자 없음"
-                description = (issue.fields.description[:100] + "...") if issue.fields.description else "내용 없음"
+                desc_raw = issue.fields.description if issue.fields.description else "내용 없음"
+                description = (desc_raw[:150] + "...") 
+                updated_date = issue.fields.updated[:10]
                 
-                combined_data += f"- [{status}] {summary} (담당: {assignee})\n  내용: {description}\n"
+                combined_data += f"- [{issue.key}] {summary} (상태: {status} | 담당: {assignee} | 수정일: {updated_date})\n"
         
         return combined_data if found_any_issue else None
         
     except Exception as e:
-        print(f"Jira 연결 오류: {e}")
+        print(f"❌ Jira 연결 또는 검색 오류: {e}")
         return None
 
-def summarize_with_gpt(text_data):
-    """OpenAI GPT-4를 사용하여 이슈 내용을 키워드별로 요약합니다."""
+def summarize_with_gemini(text_data):
+    """Google Gemini Pro를 사용하여 요약합니다. (무료)"""
     if not text_data:
         return None
 
-    client = OpenAI(api_key=OPENAI_API_KEY)
-    
-    prompt = f"""
-    아래는 최근 일주일간 진행된 Jira 이슈 리스트입니다.
-    데이터는 [{', '.join(TARGET_KEYWORDS)}] 키워드별로 구분되어 있습니다.
-
-    IT 프로젝트 매니저 관점에서 **키워드별로 섹션을 나누어** 요약 보고서를 작성해주세요.
-    
-    [작성 양식]
-    ## 1. {TARGET_KEYWORDS[0]}
-    - **현황**: (진행 상황 한 줄 요약)
-    - **핵심 이슈**: (주요 티켓 내용)
-
-    ## 2. {TARGET_KEYWORDS[1]}
-    ... (위와 동일)
-
-    ## 3. {TARGET_KEYWORDS[2]}
-    ... (위와 동일)
-    
-    [전체 종합 제언]
-    - (전체 데이터를 봤을 때 주의할 점이나 발견된 패턴 1가지)
-
-    [데이터]
-    {text_data}
-    """
-
     try:
-        response = client.chat.completions.create(
-            model="gpt-5.2", 
-            messages=[
-                {"role": "system", "content": "당신은 핵심을 잘 파악하는 수석 PM입니다. 마크다운 형식을 사용하여 가독성 있게 작성하세요."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        return response.choices[0].message.content
+        # Gemini 설정
+        genai.configure(api_key=GEMINI_API_KEY)
+        model = genai.GenerativeModel('gemini-1.5-flash') # 빠르고 무료인 최신 모델
+
+        prompt = f"""
+        당신은 IT 프로젝트 매니저입니다. 아래 Jira 이슈 데이터를 분석하여 주간 보고서를 작성하세요.
+        
+        [요청사항]
+        1. [{', '.join(TARGET_KEYWORDS)}] 키워드별로 섹션을 나누세요.
+        2. 각 섹션마다 '현황 요약', '주요 이슈(ID포함)'를 정리하세요.
+        3. 이슈가 없는 키워드는 "특이사항 없음"으로 명시하세요.
+        4. 가독성 좋은 마크다운 형식으로 작성하세요.
+
+        [데이터]
+        {text_data}
+        """
+
+        response = model.generate_content(prompt)
+        return response.text
+
     except Exception as e:
-        print(f"OpenAI API 오류: {e}")
+        print(f"❌ Gemini API 오류: {e}")
         return None
 
 def send_kakaowork_alert(message):
-    """요약된 내용을 카카오워크로 전송합니다."""
+    """카카오워크 전송 (기존과 동일)"""
     if not message:
         return
 
     title_text = ", ".join(TARGET_KEYWORDS)
-
     payload = {
         "text": f"📢 주간 이슈 리포트 ({title_text})",
         "blocks": [
@@ -144,28 +127,23 @@ def send_kakaowork_alert(message):
     try:
         response = requests.post(KAKAOWORK_WEBHOOK_URL, json=payload)
         response.raise_for_status()
-        print("카카오워크 전송 완료!")
+        print("✅ 카카오워크 전송 완료!")
     except Exception as e:
-        print(f"카카오워크 전송 오류: {e}")
+        print(f"❌ 카카오워크 전송 오류: {e}")
 
-# === 메인 실행 함수 ===
+# === 메인 실행 ===
 if __name__ == "__main__":
-    print("🚀 자동화 스크립트 시작")
+    print("🚀 자동화 스크립트 시작 (Model: Google Gemini)")
     
-    # 1. Jira 데이터 수집
     raw_data = get_jira_issues_by_keyword()
     
-    # 2. 데이터가 있든 없든 처리
     if raw_data:
         print("📝 데이터 수집 완료, AI 요약 시작...")
-        summary = summarize_with_gpt(raw_data)
+        summary = summarize_with_gemini(raw_data) # Gemini 함수 호출
         
         if summary:
             print("📩 카카오워크 전송 중...")
             send_kakaowork_alert(summary)
     else:
-        # 데이터가 없을 때도 로그 남김
-        print("⚠️ 검색된 이슈가 없습니다. (카카오워크 발송 안 함)")
-
-
-
+        print("⚠️ 수집된 데이터가 없습니다.")
+        send_kakaowork_alert("설정된 키워드로 검색된 최근 이슈가 없습니다.")
