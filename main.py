@@ -61,7 +61,7 @@ def summarize_with_gemini(text_data):
     try:
         # ✅ 수정됨: 무료 티어에서 가장 확실한 Flash 모델 고정 사용
         # 로그에 있던 'models/gemini-2.0-flash'를 사용합니다.
-        model_name = "models/Gemini 2.5 Flash Lite"
+        model_name = "models/gemini-2.5-flash-lite"
         
         print(f"🤖 선택된 AI 모델: {model_name}")
 
@@ -152,4 +152,5 @@ if __name__ == "__main__":
     else:
         print("⚠️ 수집된 데이터가 없습니다.")
         send_kakaowork_alert("설정된 키워드로 검색된 최근 이슈가 없습니다.")
+
 
