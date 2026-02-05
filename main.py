@@ -9,14 +9,14 @@ from datetime import datetime
 JIRA_SERVER = os.environ.get("JIRA_SERVER")
 JIRA_EMAIL = os.environ.get("JIRA_EMAIL")
 JIRA_TOKEN = os.environ.get("JIRA_TOKEN")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") # 이름 변경됨
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 KAKAOWORK_WEBHOOK_URL = os.environ.get("KAKAOWORK_WEBHOOK_URL")
 
 # === 2. 검색할 키워드 설정 ===
-TARGET_KEYWORDS = ["결제", "보안", "704"] 
+TARGET_KEYWORDS = ["604", "624", "704"] 
 
 def get_jira_issues_by_keyword():
-    """Jira 이슈 수집 함수 (기존과 동일)"""
+    """Jira 이슈 수집 함수"""
     combined_data = ""
     found_any_issue = False
 
@@ -53,15 +53,57 @@ def get_jira_issues_by_keyword():
         print(f"❌ Jira 연결 또는 검색 오류: {e}")
         return None
 
+def get_best_gemini_model():
+    """사용 가능한 모델 목록을 조회하여 최적의 모델 이름을 반환합니다."""
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        
+        # 사용 가능한 모델 리스트 가져오기
+        available_models = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                available_models.append(m.name)
+        
+        print(f"ℹ️ 사용 가능한 모델 목록: {available_models}")
+
+        # 우선순위: 1.5-flash -> 1.5-pro -> 1.0-pro -> 아무거나
+        for model in available_models:
+            if "gemini-1.5-flash" in model:
+                return model
+        for model in available_models:
+            if "gemini-1.5-pro" in model:
+                return model
+        for model in available_models:
+            if "gemini-pro" in model:
+                return model
+        
+        # 위 모델들이 없으면 목록의 첫 번째 모델 반환
+        if available_models:
+            return available_models[0]
+        else:
+            return None
+
+    except Exception as e:
+        print(f"⚠️ 모델 목록 조회 실패: {e}")
+        return "models/gemini-pro" # 실패 시 기본값 시도
+
 def summarize_with_gemini(text_data):
-    """Google Gemini Pro를 사용하여 요약합니다. (무료)"""
+    """자동으로 찾은 모델을 사용하여 요약합니다."""
     if not text_data:
         return None
 
     try:
-        # Gemini 설정
+        # 1. 최적의 모델명 찾기
+        model_name = get_best_gemini_model()
+        print(f"🤖 선택된 AI 모델: {model_name}")
+
+        if not model_name:
+            print("❌ 사용 가능한 Gemini 모델을 찾을 수 없습니다.")
+            return None
+
+        # 2. 모델 설정 및 호출
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-pro') # 빠르고 무료인 최신 모델
+        model = genai.GenerativeModel(model_name)
 
         prompt = f"""
         당신은 IT 프로젝트 매니저입니다. 아래 Jira 이슈 데이터를 분석하여 주간 보고서를 작성하세요.
@@ -80,11 +122,11 @@ def summarize_with_gemini(text_data):
         return response.text
 
     except Exception as e:
-        print(f"❌ Gemini API 오류: {e}")
+        print(f"❌ Gemini API 요약 오류: {e}")
         return None
 
 def send_kakaowork_alert(message):
-    """카카오워크 전송 (기존과 동일)"""
+    """카카오워크 전송"""
     if not message:
         return
 
@@ -133,13 +175,13 @@ def send_kakaowork_alert(message):
 
 # === 메인 실행 ===
 if __name__ == "__main__":
-    print("🚀 자동화 스크립트 시작 (Model: Google Gemini)")
+    print("🚀 자동화 스크립트 시작 (Auto-Detect Model)")
     
     raw_data = get_jira_issues_by_keyword()
     
     if raw_data:
         print("📝 데이터 수집 완료, AI 요약 시작...")
-        summary = summarize_with_gemini(raw_data) # Gemini 함수 호출
+        summary = summarize_with_gemini(raw_data)
         
         if summary:
             print("📩 카카오워크 전송 중...")
@@ -147,4 +189,3 @@ if __name__ == "__main__":
     else:
         print("⚠️ 수집된 데이터가 없습니다.")
         send_kakaowork_alert("설정된 키워드로 검색된 최근 이슈가 없습니다.")
-
