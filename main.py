@@ -88,7 +88,7 @@ def summarize_with_gpt(text_data):
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4", 
+            model="gpt-5.2", 
             messages=[
                 {"role": "system", "content": "당신은 핵심을 잘 파악하는 수석 PM입니다. 마크다운 형식을 사용하여 가독성 있게 작성하세요."},
                 {"role": "user", "content": prompt}
@@ -166,5 +166,6 @@ if __name__ == "__main__":
     else:
         # 데이터가 없을 때도 로그 남김
         print("⚠️ 검색된 이슈가 없습니다. (카카오워크 발송 안 함)")
+
 
 
