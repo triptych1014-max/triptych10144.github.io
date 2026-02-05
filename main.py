@@ -53,55 +53,18 @@ def get_jira_issues_by_keyword():
         print(f"❌ Jira 연결 또는 검색 오류: {e}")
         return None
 
-def get_best_gemini_model():
-    """사용 가능한 모델 목록을 조회하여 최적의 모델 이름을 반환합니다."""
-    try:
-        genai.configure(api_key=GEMINI_API_KEY)
-        
-        # 사용 가능한 모델 리스트 가져오기
-        available_models = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                available_models.append(m.name)
-        
-        print(f"ℹ️ 사용 가능한 모델 목록: {available_models}")
-
-        # 우선순위: 1.5-flash -> 1.5-pro -> 1.0-pro -> 아무거나
-        for model in available_models:
-            if "gemini-1.5-flash" in model:
-                return model
-        for model in available_models:
-            if "gemini-1.5-pro" in model:
-                return model
-        for model in available_models:
-            if "gemini-pro" in model:
-                return model
-        
-        # 위 모델들이 없으면 목록의 첫 번째 모델 반환
-        if available_models:
-            return available_models[0]
-        else:
-            return None
-
-    except Exception as e:
-        print(f"⚠️ 모델 목록 조회 실패: {e}")
-        return "models/gemini-pro" # 실패 시 기본값 시도
-
 def summarize_with_gemini(text_data):
-    """자동으로 찾은 모델을 사용하여 요약합니다."""
+    """Gemini 2.0 Flash 모델을 사용하여 요약합니다."""
     if not text_data:
         return None
 
     try:
-        # 1. 최적의 모델명 찾기
-        model_name = get_best_gemini_model()
+        # ✅ 수정됨: 무료 티어에서 가장 확실한 Flash 모델 고정 사용
+        # 로그에 있던 'models/gemini-2.0-flash'를 사용합니다.
+        model_name = "models/gemini-2.0-flash"
+        
         print(f"🤖 선택된 AI 모델: {model_name}")
 
-        if not model_name:
-            print("❌ 사용 가능한 Gemini 모델을 찾을 수 없습니다.")
-            return None
-
-        # 2. 모델 설정 및 호출
         genai.configure(api_key=GEMINI_API_KEY)
         model = genai.GenerativeModel(model_name)
 
@@ -175,7 +138,7 @@ def send_kakaowork_alert(message):
 
 # === 메인 실행 ===
 if __name__ == "__main__":
-    print("🚀 자동화 스크립트 시작 (Auto-Detect Model)")
+    print("🚀 자동화 스크립트 시작 (Model: Gemini 2.0 Flash)")
     
     raw_data = get_jira_issues_by_keyword()
     
