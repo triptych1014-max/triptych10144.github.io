@@ -61,7 +61,7 @@ def summarize_with_gemini(text_data):
     try:
         # Gemini 설정
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-1.5-flash') # 빠르고 무료인 최신 모델
+        model = genai.GenerativeModel('gemini-pro') # 빠르고 무료인 최신 모델
 
         prompt = f"""
         당신은 IT 프로젝트 매니저입니다. 아래 Jira 이슈 데이터를 분석하여 주간 보고서를 작성하세요.
@@ -147,3 +147,4 @@ if __name__ == "__main__":
     else:
         print("⚠️ 수집된 데이터가 없습니다.")
         send_kakaowork_alert("설정된 키워드로 검색된 최근 이슈가 없습니다.")
+
