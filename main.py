@@ -59,8 +59,8 @@ def summarize_with_gemini(text_data):
         return None
 
     try:
-        # ✅ 모델명 수정: 'gemini-1.5-flash'가 현재 가장 안정적인 무료 티어 모델입니다.
-        model_name = "gemini-1.5-flash"
+        # ✅ 모델명 수정: 'gemini-2.5-flash-lite'가 현재 가장 안정적인 무료 티어 모델입니다.
+        model_name = "gemini-2.5-flash-lite"
         print(f"🤖 선택된 AI 모델: {model_name}")
 
         genai.configure(api_key=GEMINI_API_KEY)
@@ -165,3 +165,4 @@ if __name__ == "__main__":
         print("⚠️ 수집된 데이터가 없습니다. 알림을 건너뜁니다.")
         # 데이터가 없을 때도 알림을 보내고 싶다면 아래 주석을 해제하세요.
         # send_kakaowork_message("이번 주 검색된 Jira 이슈가 없습니다.")
+
