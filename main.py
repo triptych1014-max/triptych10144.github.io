@@ -88,53 +88,56 @@ def summarize_with_gemini(text_data):
         print(f"❌ Gemini API 요약 오류: {e}")
         return None
 
-def send_kakaowork_alert(message):
-    """카카오워크 전송"""
-    if not message:
-        return
+def send_kakaowork_message(summary_text):
+    webhook_url = os.getenv("KAKAOWORK_WEBHOOK_URL")
+    
+    # 1. 안전한 텍스트 처리 (너무 길면 자르기)
+    safe_summary = (summary_text[:300] + '...') if len(summary_text) > 300 else summary_text
 
-    title_text = ", ".join(TARGET_KEYWORDS)
+    # 2. 규격에 맞춘 블록키트 구성
     payload = {
-        "text": f"📢 주간 이슈 리포트 ({title_text})",
+        "text": "Jira 주간 리포트 알림", # 필수: 알림 센터에 표시될 텍스트
         "blocks": [
             {
                 "type": "header",
-                "text": "📢 주간 통합 이슈 리포트",
+                "text": "📅 Jira 주간 리포트",
                 "style": "blue"
             },
             {
-                "type": "text",
-                "text": f"**대상 키워드:** {title_text}",
-                "markdown": True
+                "type": "section",
+                "content": {
+                    "type": "text",
+                    "text": safe_summary,
+                    "markdown": True
+                }
             },
             {
                 "type": "divider"
             },
             {
-                "type": "text",
-                "text": message,
-                "markdown": True
-            },
-            {
-                "type": "context",
-                "content": {
-                    "type": "text",
-                    "text": f"발송 시간: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-                },
-                "image": {
-                    "type": "image_link",
-                    "url": "https://cdn-icons-png.flaticon.com/512/25/25231.png"
-                }
+                "type": "action",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": "Jira 열기",
+                        "style": "primary",
+                        "action_type": "open_external_app",
+                        "value": os.getenv("JIRA_SERVER", "https://atlassian.net")
+                    }
+                ]
             }
         ]
     }
+
+    headers = {"Content-Type": "application/json"}
+    response = requests.post(webhook_url, json=payload) # json=으로 바로 전송 (추천)
     
-    try:
-        response = requests.post(KAKAOWORK_WEBHOOK_URL, json=payload)
-        response.raise_for_status()
-        print("✅ 카카오워크 전송 완료!")
-    except Exception as e:
-        print(f"❌ 카카오워크 전송 오류: {e}")
+    if response.status_code == 200:
+        print("✅ 카카오워크 메시지 전송 성공!")
+    else:
+        # 400 에러 발생 시 카카오워크가 주는 구체적인 답변을 출력합니다.
+        print(f"❌ 전송 실패 (상태 코드: {response.status_code})")
+        print(f"🔍 상세 에러 내용: {response.text}")
 
 # === 메인 실행 ===
 if __name__ == "__main__":
@@ -152,5 +155,6 @@ if __name__ == "__main__":
     else:
         print("⚠️ 수집된 데이터가 없습니다.")
         send_kakaowork_alert("설정된 키워드로 검색된 최근 이슈가 없습니다.")
+
 
 
