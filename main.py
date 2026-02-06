@@ -87,21 +87,22 @@ def summarize_with_gemini(text_data):
         return None
 
 def send_kakaowork_message(summary_text):
-    """카카오워크 블록키트 전송 함수"""
+    """카카오워크 블록키트 전송 함수 (400 에러 해결 버전)"""
     if not KAKAOWORK_WEBHOOK_URL:
         print("❌ 에러: KAKAOWORK_WEBHOOK_URL이 설정되지 않았습니다.")
         return
 
-    # 텍스트가 너무 길면 카카오워크에서 거절될 수 있으므로 제한 (약 3,000자 내외 안전)
-    safe_summary = (summary_text[:2500] + '...') if len(summary_text) > 2500 else summary_text
+    # 1. 텍스트 길이 및 안전성 처리
+    # 섹션 본문은 안전하게 800자로 제한합니다.
+    safe_summary = (summary_text[:800] + '\n...(중략)') if len(summary_text) > 800 else summary_text
 
-    # 카카오워크 블록키트 페이로드
+    # 2. 규격에 맞춘 블록키트 페이로드 구성
     payload = {
-        "text": "Jira 주간 리포트 알림",
+        "text": "Jira 주간 리포트",  # 알림 팝업용 텍스트
         "blocks": [
             {
                 "type": "header",
-                "text": "📅 Jira 주간 리포트",
+                "text": "📅 Jira 주간 리포트", # 20자 이내 준수
                 "style": "blue"
             },
             {
@@ -120,10 +121,10 @@ def send_kakaowork_message(summary_text):
                 "elements": [
                     {
                         "type": "button",
-                        "text": "Jira 서버 바로가기",
+                        "text": "Jira 열기",
                         "style": "primary",
-                        "action_type": "open_external_app",
-                        "value": JIRA_SERVER
+                        "action_type": "open_system_browser", # ✅ 수정: 일반 URL은 이 타입을 사용해야 함
+                        "value": JIRA_SERVER if JIRA_SERVER else "https://atlassian.net"
                     }
                 ]
             }
@@ -132,16 +133,17 @@ def send_kakaowork_message(summary_text):
 
     try:
         headers = {"Content-Type": "application/json"}
-        # json 파라미터를 사용하여 딕셔너리를 JSON 문자로 자동 변환
+        # json 파라미터를 사용하면 딕셔너리가 자동으로 JSON 문자열로 변환됩니다.
         response = requests.post(KAKAOWORK_WEBHOOK_URL, json=payload, headers=headers)
         
         if response.status_code == 200:
             print("✅ 카카오워크 메시지 전송 성공!")
         else:
             print(f"❌ 전송 실패 (코드: {response.status_code})")
-            print(f"🔍 상세 에러: {response.text}")
+            print(f"🔍 상세 에러 메시지: {response.text}")
+            # 만약 여기서도 에러가 나면, payload를 출력해서 https://blockkit.kakaowork.com/ 에서 검증해보세요.
     except Exception as e:
-        print(f"❌ 카카오워크 요청 중 예외 발생: {e}")
+        print(f"❌ 요청 중 예외 발생: {e}")
 
 # === 메인 실행 로직 ===
 if __name__ == "__main__":
@@ -165,4 +167,5 @@ if __name__ == "__main__":
         print("⚠️ 수집된 데이터가 없습니다. 알림을 건너뜁니다.")
         # 데이터가 없을 때도 알림을 보내고 싶다면 아래 주석을 해제하세요.
         # send_kakaowork_message("이번 주 검색된 Jira 이슈가 없습니다.")
+
 
