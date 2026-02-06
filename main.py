@@ -1,9 +1,10 @@
 import os
 import sys
+import requests
+import json
+from datetime import datetime
 from jira import JIRA
 import google.generativeai as genai
-import requests
-from datetime import datetime
 
 # === 1. 환경 변수 로드 ===
 JIRA_SERVER = os.environ.get("JIRA_SERVER")
@@ -21,31 +22,30 @@ def get_jira_issues_by_keyword():
     found_any_issue = False
 
     try:
+        # Jira 연결 인증
         jira = JIRA(server=JIRA_SERVER, basic_auth=(JIRA_EMAIL, JIRA_TOKEN))
         
         for keyword in TARGET_KEYWORDS:
             print(f"🔍 '{keyword}' 관련 이슈 검색 중...")
             
-            # 검색 조건: 제목/내용 포함 OR 최근 30일 내 업데이트
+            # 검색 조건: 요약(summary) 또는 본문(text)에 키워드 포함 + 최근 30일 이내 업데이트
             jql_query = f'(summary ~ "{keyword}" OR text ~ "{keyword}") AND updated >= "-30d" ORDER BY updated DESC'
             issues = jira.search_issues(jql_query, maxResults=10)
             
             if not issues:
-                combined_data += f"\n=== [{keyword}] 관련 최근 이슈 없음 ===\n"
+                combined_data += f"\n### [{keyword}] 관련 최근 이슈 없음\n"
                 continue
                 
             found_any_issue = True
-            combined_data += f"\n=== [{keyword}] 관련 이슈 ({len(issues)}건) ===\n"
+            combined_data += f"\n### [{keyword}] 관련 이슈 ({len(issues)}건)\n"
             
             for issue in issues:
                 summary = issue.fields.summary
                 status = issue.fields.status.name
                 assignee = issue.fields.assignee.displayName if issue.fields.assignee else "담당자 없음"
-                desc_raw = issue.fields.description if issue.fields.description else "내용 없음"
-                description = (desc_raw[:150] + "...") 
                 updated_date = issue.fields.updated[:10]
                 
-                combined_data += f"- [{issue.key}] {summary} (상태: {status} | 담당: {assignee} | 수정일: {updated_date})\n"
+                combined_data += f"- **[{issue.key}]** {summary} (상태: {status} | 담당: {assignee} | 수정일: {updated_date})\n"
         
         return combined_data if found_any_issue else None
         
@@ -54,15 +54,13 @@ def get_jira_issues_by_keyword():
         return None
 
 def summarize_with_gemini(text_data):
-    """Gemini 2.0 Flash 모델을 사용하여 요약합니다."""
+    """Gemini API를 사용하여 요약 생성"""
     if not text_data:
         return None
 
     try:
-        # ✅ 수정됨: 무료 티어에서 가장 확실한 Flash 모델 고정 사용
-        # 로그에 있던 'models/gemini-2.0-flash'를 사용합니다.
-        model_name = "models/gemini-2.5-flash-lite"
-        
+        # ✅ 모델명 수정: 'gemini-1.5-flash'가 현재 가장 안정적인 무료 티어 모델입니다.
+        model_name = "gemini-1.5-flash"
         print(f"🤖 선택된 AI 모델: {model_name}")
 
         genai.configure(api_key=GEMINI_API_KEY)
@@ -72,10 +70,10 @@ def summarize_with_gemini(text_data):
         당신은 IT 프로젝트 매니저입니다. 아래 Jira 이슈 데이터를 분석하여 주간 보고서를 작성하세요.
         
         [요청사항]
-        1. [{', '.join(TARGET_KEYWORDS)}] 키워드별로 섹션을 나누세요.
-        2. 각 섹션마다 '현황 요약', '주요 이슈(ID포함)'를 정리하세요.
+        1. [{', '.join(TARGET_KEYWORDS)}] 키워드별로 섹션을 나누어 정리하세요.
+        2. 각 섹션마다 '현황 요약', '주요 이슈(ID포함)'를 포함하세요.
         3. 이슈가 없는 키워드는 "특이사항 없음"으로 명시하세요.
-        4. 가독성 좋은 마크다운 형식으로 작성하세요.
+        4. 가독성 좋게 불렛포인트를 사용하여 작성하세요.
 
         [데이터]
         {text_data}
@@ -89,14 +87,17 @@ def summarize_with_gemini(text_data):
         return None
 
 def send_kakaowork_message(summary_text):
-    webhook_url = os.getenv("KAKAOWORK_WEBHOOK_URL")
-    
-    # 1. 안전한 텍스트 처리 (너무 길면 자르기)
-    safe_summary = (summary_text[:300] + '...') if len(summary_text) > 300 else summary_text
+    """카카오워크 블록키트 전송 함수"""
+    if not KAKAOWORK_WEBHOOK_URL:
+        print("❌ 에러: KAKAOWORK_WEBHOOK_URL이 설정되지 않았습니다.")
+        return
 
-    # 2. 규격에 맞춘 블록키트 구성
+    # 텍스트가 너무 길면 카카오워크에서 거절될 수 있으므로 제한 (약 3,000자 내외 안전)
+    safe_summary = (summary_text[:2500] + '...') if len(summary_text) > 2500 else summary_text
+
+    # 카카오워크 블록키트 페이로드
     payload = {
-        "text": "Jira 주간 리포트 알림", # 필수: 알림 센터에 표시될 텍스트
+        "text": "Jira 주간 리포트 알림",
         "blocks": [
             {
                 "type": "header",
@@ -119,42 +120,48 @@ def send_kakaowork_message(summary_text):
                 "elements": [
                     {
                         "type": "button",
-                        "text": "Jira 열기",
+                        "text": "Jira 서버 바로가기",
                         "style": "primary",
                         "action_type": "open_external_app",
-                        "value": os.getenv("JIRA_SERVER", "https://atlassian.net")
+                        "value": JIRA_SERVER
                     }
                 ]
             }
         ]
     }
 
-    headers = {"Content-Type": "application/json"}
-    response = requests.post(webhook_url, json=payload) # json=으로 바로 전송 (추천)
-    
-    if response.status_code == 200:
-        print("✅ 카카오워크 메시지 전송 성공!")
-    else:
-        # 400 에러 발생 시 카카오워크가 주는 구체적인 답변을 출력합니다.
-        print(f"❌ 전송 실패 (상태 코드: {response.status_code})")
-        print(f"🔍 상세 에러 내용: {response.text}")
+    try:
+        headers = {"Content-Type": "application/json"}
+        # json 파라미터를 사용하여 딕셔너리를 JSON 문자로 자동 변환
+        response = requests.post(KAKAOWORK_WEBHOOK_URL, json=payload, headers=headers)
+        
+        if response.status_code == 200:
+            print("✅ 카카오워크 메시지 전송 성공!")
+        else:
+            print(f"❌ 전송 실패 (코드: {response.status_code})")
+            print(f"🔍 상세 에러: {response.text}")
+    except Exception as e:
+        print(f"❌ 카카오워크 요청 중 예외 발생: {e}")
 
-# === 메인 실행 ===
+# === 메인 실행 로직 ===
 if __name__ == "__main__":
-    print("🚀 자동화 스크립트 시작 (Model: Gemini 2.0 Flash)")
+    print(f"🚀 스크립트 실행 시작: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
+    # 1. Jira 데이터 수집
     raw_data = get_jira_issues_by_keyword()
     
     if raw_data:
-        print("📝 데이터 수집 완료, AI 요약 시작...")
+        print("📝 데이터 수집 완료, AI 요약 진행 중...")
+        # 2. Gemini 요약
         summary = summarize_with_gemini(raw_data)
         
         if summary:
             print("📩 카카오워크 전송 중...")
-            send_kakaowork_alert(summary)
+            # 3. 메시지 전송 (함수 이름 수정됨)
+            send_kakaowork_message(summary)
+        else:
+            print("⚠️ 요약 결과가 비어있습니다.")
     else:
-        print("⚠️ 수집된 데이터가 없습니다.")
-        send_kakaowork_alert("설정된 키워드로 검색된 최근 이슈가 없습니다.")
-
-
-
+        print("⚠️ 수집된 데이터가 없습니다. 알림을 건너뜁니다.")
+        # 데이터가 없을 때도 알림을 보내고 싶다면 아래 주석을 해제하세요.
+        # send_kakaowork_message("이번 주 검색된 Jira 이슈가 없습니다.")
